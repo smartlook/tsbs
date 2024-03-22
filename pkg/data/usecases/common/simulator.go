@@ -1,9 +1,10 @@
 package common
 
 import (
-	"github.com/timescale/tsbs/pkg/data"
 	"reflect"
 	"time"
+
+	"github.com/timescale/tsbs/pkg/data"
 )
 
 // SimulatorConfig is an interface to create a Simulator from a time.Duration.
@@ -125,7 +126,7 @@ func (s *BaseSimulator) Next(p *data.Point) bool {
 
 	// Populate the Generator tags.
 	for _, tag := range generator.Tags() {
-		p.AppendTag(tag.Key, tag.Value)
+		p.AppendTag(tag.Key, tag.Value())
 	}
 
 	// Populate measurement-specific tags and fields:
@@ -182,7 +183,7 @@ func (s *BaseSimulator) TagTypes() []string {
 	tags := s.generators[0].Tags()
 	types := make([]string, len(tags))
 	for i, tag := range tags {
-		types[i] = reflect.TypeOf(tag.Value).String()
+		types[i] = reflect.TypeOf(tag.Value()).String()
 	}
 
 	return types
