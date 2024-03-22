@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tsbs
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tsbs
+  template:
+    metadata:
+      labels:
+        app: tsbs
+    spec:
+      containers:
+      - name: tsbs
+        image: 698591829921.dkr.ecr.eu-central-1.amazonaws.com/tsbs:latest
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1"
