@@ -1,10 +1,9 @@
 package iot
 
 import (
-	"fmt"
-	"github.com/timescale/tsbs/pkg/data/usecases/common"
-	"math/rand"
 	"time"
+
+	"github.com/timescale/tsbs/pkg/data/usecases/common"
 )
 
 const (
@@ -101,21 +100,21 @@ func NewTruck(i int, start time.Time) common.Generator {
 	return &truck
 }
 
-func newTruckWithMeasurementGenerator(i int, start time.Time, generator func(time.Time) []common.SimulatedMeasurement) Truck {
+func newTruckWithMeasurementGenerator(_ int, start time.Time, generator func(time.Time) []common.SimulatedMeasurement) Truck {
 	sm := generator(start)
 
-	m := modelChoices[rand.Intn(len(modelChoices))]
+	// m := modelChoices[rand.Intn(len(modelChoices))]
 
 	h := Truck{
 		tags: []common.Tag{
-			{Key: []byte("name"), Value: fmt.Sprintf(truckNameFmt, i)},
-			{Key: []byte("fleet"), Value: common.RandomStringSliceChoice(FleetChoices)},
-			{Key: []byte("driver"), Value: common.RandomStringSliceChoice(driverChoices)},
-			{Key: []byte("model"), Value: m.Name},
-			{Key: []byte("device_version"), Value: common.RandomStringSliceChoice(deviceVersionChoices)},
-			{Key: []byte("load_capacity"), Value: m.LoadCapacity},
-			{Key: []byte("fuel_capacity"), Value: m.FuelCapacity},
-			{Key: []byte("nominal_fuel_consumption"), Value: m.FuelConsumption},
+			// {Key: []byte("name"), Value: fmt.Sprintf(truckNameFmt, i)},
+			// {Key: []byte("fleet"), Value: common.RandomStringSliceChoice(FleetChoices)},
+			// {Key: []byte("driver"), Value: common.RandomStringSliceChoice(driverChoices)},
+			// {Key: []byte("model"), Value: m.Name},
+			// {Key: []byte("device_version"), Value: common.RandomStringSliceChoice(deviceVersionChoices)},
+			// {Key: []byte("load_capacity"), Value: m.LoadCapacity},
+			// {Key: []byte("fuel_capacity"), Value: m.FuelCapacity},
+			// {Key: []byte("nominal_fuel_consumption"), Value: m.FuelConsumption},
 		},
 		simulatedMeasurements: sm,
 	}
