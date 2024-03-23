@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.13.1-alpine AS builder
+FROM golang:1.22.1-alpine AS builder
 WORKDIR /tsbs
 COPY ./ ./
 RUN apk update && apk add --no-cache git
