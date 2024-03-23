@@ -2,11 +2,12 @@ package common
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/spf13/pflag"
 	"github.com/timescale/tsbs/internal/utils"
 	"github.com/timescale/tsbs/pkg/targets/constants"
-	"strings"
-	"time"
 )
 
 // Generator is a single entity which generates data from its respective measurements.
@@ -19,7 +20,7 @@ type Generator interface {
 // Tag is a key-value pair of information which is used to tag a generator
 type Tag struct {
 	Key   []byte
-	Value interface{}
+	Value func() interface{}
 }
 
 const (

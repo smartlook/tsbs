@@ -2,11 +2,13 @@ package usecases
 
 import (
 	"fmt"
+	"math"
+
 	"github.com/timescale/tsbs/internal/utils"
 	"github.com/timescale/tsbs/pkg/data/usecases/common"
+	"github.com/timescale/tsbs/pkg/data/usecases/dea"
 	"github.com/timescale/tsbs/pkg/data/usecases/devops"
 	"github.com/timescale/tsbs/pkg/data/usecases/iot"
-	"math"
 )
 
 const errCannotParseTimeFmt = "cannot parse time from string '%s': %v"
@@ -75,6 +77,16 @@ func GetSimulatorConfig(dgc *common.DataGeneratorConfig) (common.SimulatorConfig
 				HostConstructor: devops.NewHostGenericMetrics,
 				MaxMetricCount:  dgc.MaxMetricCountPerHost,
 			},
+		}
+	case common.UseCaseDEA:
+		// for now, we can reuse the iot simulator
+		ret = &iot.SimulatorConfig{
+			Start: tsStart,
+			End:   tsEnd,
+
+			InitGeneratorScale:   dgc.InitialScale,
+			GeneratorScale:       dgc.Scale,
+			GeneratorConstructor: dea.NewEvent,
 		}
 	default:
 		err = fmt.Errorf("unknown use case: '%s'", dgc.Use)
