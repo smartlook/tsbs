@@ -67,18 +67,17 @@ func (d *Devops) getSelectClausesAggMetrics(aggregateFunction string, metrics []
 	return selectAggregateClauses
 }
 
-// ClickHouse understands and can compare time presented as strings of this format
-const clickhouseTimeStringFormat = "2006-01-02 15:04:05"
-
 // MaxAllCPU selects the MAX of all metrics under 'cpu' per hour for nhosts hosts,
 // e.g. in pseudo-SQL:
 //
 // SELECT MAX(metric1), ..., MAX(metricN)
 // FROM cpu
 // WHERE
-// 		(hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
-// 		AND time >= '$HOUR_START'
-// 		AND time < '$HOUR_END'
+//
+//	(hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
+//	AND time >= '$HOUR_START'
+//	AND time < '$HOUR_END'
+//
 // GROUP BY hour
 // ORDER BY hour
 //
@@ -290,9 +289,11 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 // SELECT minute, max(metric1), ..., max(metricN)
 // FROM cpu
 // WHERE
-// 		(hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
-// 	AND time >= '$HOUR_START'
-// 	AND time < '$HOUR_END'
+//
+//		(hostname = '$HOSTNAME_1' OR ... OR hostname = '$HOSTNAME_N')
+//	AND time >= '$HOUR_START'
+//	AND time < '$HOUR_END'
+//
 // GROUP BY minute
 // ORDER BY minute ASC
 //
@@ -305,8 +306,7 @@ func (d *Devops) LastPointPerHost(qi query.Query) {
 // single-groupby-5-8-1
 func (d *Devops) GroupByTime(qi query.Query, nHosts, numMetrics int, timeRange time.Duration) {
 	interval := d.Interval.MustRandWindow(timeRange)
-	metrics, err := devops.GetCPUMetricsSlice(numMetrics)
-	panicIfErr(err)
+	metrics := Must(devops.GetCPUMetricsSlice(numMetrics))
 	selectClauses := d.getSelectClausesAggMetrics("max", metrics)
 
 	sql := fmt.Sprintf(`

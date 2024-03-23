@@ -12,39 +12,69 @@ import (
 	"github.com/timescale/tsbs/pkg/publicid"
 )
 
+const (
+	UrlProperty            = "url"
+	EmailProperty          = "email"
+	NameProperty           = "name"
+	PhoneProperty          = "phone"
+	FavoriteNumberProperty = "age"
+)
+
+const (
+	NavigationEvent = "navigation"
+	ClickEvent      = "click"
+	CheckoutEvent   = "cart_checkout"
+	TypingEvent     = "typing"
+)
+
+var (
+	AvailableEvents            = []string{NavigationEvent, ClickEvent, CheckoutEvent, TypingEvent}
+	AvailableStrProperties     = []string{UrlProperty, EmailProperty, NameProperty, PhoneProperty}
+	AvailableStrPropertyValues = map[string][]string{
+		UrlProperty:   {"https://www.seznam.cz"},
+		EmailProperty: {"hello@world.com"},
+		NameProperty:  {"john doe"},
+		PhoneProperty: {"+420602303222"},
+	}
+)
+
 var (
 	OtelChoices = map[string][]string{
-		"telemetry.auto.version":      {"1.23.0", "1.23.1", "1.23.2", "1.23.3", "1.23.4"},
-		"os.description":              {"Linux 5.10.104-linuxkit", "Linux 5.10.105-linuxkit", "Linux 5.10.106-linuxkit", "Linux 5.10.107-linuxkit", "Linux 5.10.108-linuxkit"},
-		"process.runtime.description": {"Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.6+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.7+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.8+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.9+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.10+10"},
-		"service.name":                {"adservice", "bbservice", "ccservice", "ddservice", "eeservice"},
-		"service.namespace":           {"opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo"},
-		"telemetry.sdk.version":       {"1.23.0", "1.23.1", "1.23.2", "1.23.3", "1.23.4"},
-		"process.runtime.version":     {"17.0.6+10", "17.0.7+10", "17.0.8+10", "17.0.9+10", "17.0.10+10"},
-		"telemetry.sdk.name":          {"opentelemetry", "opentelemetry", "opentelemetry", "opentelemetry", "opentelemetry"},
-		"host.arch":                   {"aarch64", "aarch64", "aarch64", "aarch64", "aarch64"},
-		"host.name":                   {"c97f4b793890", "c97f4b793891", "c97f4b793892", "c97f4b793893", "c97f4b793894"},
-		"process.executable.path": {
-			"/opt/1/java/openjdk/bin/java",
-			"/opt/2/java/openjdk/bin/java",
-			"/opt/3/java/openjdk/bin/java",
-			"/opt/4/java/openjdk/bin/java",
-			"/opt/5/java/openjdk/bin/java",
-		},
-		"process.pid":          {"1", "2", "3", "4", "5"},
-		"process.runtime.name": {"OpenJDK Runtime Environment", "Oracle JDK Runtime Environment", "Eclipse Adoptium OpenJDK Runtime Environment", "Amazon Corretto JDK Runtime Environment", "IBM JDK Runtime Environment"},
-		"container.id": {
-			"c97f4b7938901101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
-			"c97f4b7938911101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
-			"c97f4b7938921101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
-		},
-		"os.type": {"linux", "macos", "windows"},
-		"process.command_line": {
-			"/opt/1/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
-			"/opt/2/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
-			"/opt/3/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
-		},
-		"telemetry.sdk.language": {"java", "go", "python", "javascript", "csharp"},
+		UrlProperty:   {"https://www.seznam.cz"},
+		EmailProperty: {"hello@world.com"},
+		NameProperty:  {"john doe"},
+		PhoneProperty: {"+420602303222"},
+		// "telemetry.auto.version":      {"1.23.0", "1.23.1", "1.23.2", "1.23.3", "1.23.4"},
+		// "os.description":              {"Linux 5.10.104-linuxkit", "Linux 5.10.105-linuxkit", "Linux 5.10.106-linuxkit", "Linux 5.10.107-linuxkit", "Linux 5.10.108-linuxkit"},
+		// "process.runtime.description": {"Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.6+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.7+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.8+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.9+10", "Eclipse Adoptium OpenJDK 64-Bit Server VM 17.0.10+10"},
+		// "service.name":                {"adservice", "bbservice", "ccservice", "ddservice", "eeservice"},
+		// "service.namespace":           {"opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo", "opentelemetry-demo"},
+		// "telemetry.sdk.version":       {"1.23.0", "1.23.1", "1.23.2", "1.23.3", "1.23.4"},
+		// "process.runtime.version":     {"17.0.6+10", "17.0.7+10", "17.0.8+10", "17.0.9+10", "17.0.10+10"},
+		// "telemetry.sdk.name":          {"opentelemetry", "opentelemetry", "opentelemetry", "opentelemetry", "opentelemetry"},
+		// "host.arch":                   {"aarch64", "aarch64", "aarch64", "aarch64", "aarch64"},
+		// "host.name":                   {"c97f4b793890", "c97f4b793891", "c97f4b793892", "c97f4b793893", "c97f4b793894"},
+		// "process.executable.path": {
+		// 	"/opt/1/java/openjdk/bin/java",
+		// 	"/opt/2/java/openjdk/bin/java",
+		// 	"/opt/3/java/openjdk/bin/java",
+		// 	"/opt/4/java/openjdk/bin/java",
+		// 	"/opt/5/java/openjdk/bin/java",
+		// },
+		// "process.pid":          {"1", "2", "3", "4", "5"},
+		// "process.runtime.name": {"OpenJDK Runtime Environment", "Oracle JDK Runtime Environment", "Eclipse Adoptium OpenJDK Runtime Environment", "Amazon Corretto JDK Runtime Environment", "IBM JDK Runtime Environment"},
+		// "container.id": {
+		// 	"c97f4b7938901101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
+		// 	"c97f4b7938911101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
+		// 	"c97f4b7938921101550efbda3c250414cee6ba9bfb4769dc7fe156cb2311735e",
+		// },
+		// "os.type": {"linux", "macos", "windows"},
+		// "process.command_line": {
+		// 	"/opt/1/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
+		// 	"/opt/2/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
+		// 	"/opt/3/java/openjdk/bin/java -javaagent:/usr/src/app/opentelemetry-javaagent.jar",
+		// },
+		// "telemetry.sdk.language": {"java", "go", "python", "javascript", "csharp"},
 	}
 
 	OtelChoicesKeys = func() []string {
@@ -55,6 +85,19 @@ var (
 		return keys
 	}()
 )
+
+func generateArrayOfIds(n int, prefix string) []string {
+	var users = make([]string, n)
+
+	for i := range n {
+		users[i] = publicid.MustWithPrefix(prefix)
+	}
+
+	return users
+}
+
+var knownUsers = generateArrayOfIds(200000, "u")
+var knownTenants = generateArrayOfIds(100, "t")
 
 type Event struct {
 	simulatedMeasurements []common.SimulatedMeasurement
@@ -132,7 +175,7 @@ func newEventWithMeasurementGenerator(_ int, start time.Time, generator func(tim
 			{
 				Key: []byte("user_id"),
 				Value: func() interface{} {
-					return publicid.MustWithPrefix("u")
+					return gofakeit.RandomString(knownUsers)
 				},
 			},
 			{
@@ -144,7 +187,7 @@ func newEventWithMeasurementGenerator(_ int, start time.Time, generator func(tim
 			{
 				Key: []byte("tenant_id"),
 				Value: func() interface{} {
-					return publicid.MustWithPrefix("t")
+					return gofakeit.RandomString(knownTenants)
 				},
 			},
 			{
@@ -156,7 +199,7 @@ func newEventWithMeasurementGenerator(_ int, start time.Time, generator func(tim
 			{
 				Key: []byte("name"),
 				Value: func() interface{} {
-					return gofakeit.RandomString([]string{"click", "pageview", "submit", "network", "error"})
+					return gofakeit.RandomString(AvailableEvents)
 				},
 			},
 			{
