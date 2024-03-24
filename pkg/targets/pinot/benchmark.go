@@ -1,4 +1,4 @@
-package clickhouse
+package pinot
 
 import (
 	"bufio"
@@ -29,9 +29,9 @@ type insertData struct {
 	fields string // 1451606400000000000,58,2,24,61,22,63,6,44,80,38
 }
 
-var tableCols = map[string][]string{"tags": {"event_id", "user_id", "session_id", "tenant_id", "timestamp", "name", "properties_map", "properties_json"}}
+var tableCols map[string][]string
 
-var tagColumnTypes = []string{"string", "string", "string", "string", "int64", "string", "string", "string"}
+var tagColumnTypes []string
 
 // allows for testing
 var fatal = log.Fatalf

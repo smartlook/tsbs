@@ -1,23 +1,19 @@
-package clickhouse
+package pinot
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-
+	"github.com/jmoiron/sqlx"
 	"github.com/timescale/tsbs/pkg/targets"
 )
 
 // load.Processor interface implementation
 type processor struct {
-	conn driver.Conn
+	db   *sqlx.DB
 	csi  *syncCSI
 	conf *ClickhouseConfig
 }
@@ -25,12 +21,7 @@ type processor struct {
 // load.Processor interface implementation
 func (p *processor) Init(workerNum int, doLoad, hashWorkers bool) {
 	if doLoad {
-		conn, err := connect(p.conf, true)
-		if err != nil {
-			panic(err)
-		}
-
-		p.conn = conn
+		p.db = sqlx.MustConnect(dbType, getConnectString(p.conf, true))
 		if hashWorkers {
 			p.csi = newSyncCSI()
 		} else {
@@ -42,7 +33,7 @@ func (p *processor) Init(workerNum int, doLoad, hashWorkers bool) {
 // load.ProcessorCloser interface implementation
 func (p *processor) Close(doLoad bool) {
 	if doLoad {
-		p.conn.Close()
+		p.db.Close()
 	}
 }
 
@@ -93,7 +84,6 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	tagRows := make([][]string, 0, len(rows))
 	dataRows := make([][]interface{}, 0, len(rows))
 	ret := uint64(0)
-	// fmt.Println("table cols:", tableCols["tags"])
 	commonTagsLen := len(tableCols["tags"])
 
 	colLen := len(tableCols[tableName]) + 2
@@ -126,14 +116,14 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 			tags[i] = strings.Split(tags[i], "=")[1]
 		}
 		// prepare JSON for tags that are not common
-		// var json interface{} = nil
-		// if len(tags) > commonTagsLen {
-		// 	// Join additional tags into JSON string
-		// 	json = subsystemTagsToJSON(strings.Split(tags[commonTagsLen], ","))
-		// } else {
-		// 	// No additional tags
-		// 	json = ""
-		// }
+		var json interface{} = nil
+		if len(tags) > commonTagsLen {
+			// Join additional tags into JSON string
+			json = subsystemTagsToJSON(strings.Split(tags[commonTagsLen], ","))
+		} else {
+			// No additional tags
+			json = ""
+		}
 
 		// fields line ex.:
 		// 1451606400000000000,58,2,24,61,22,63,6,44,80,38
@@ -168,8 +158,8 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 			timeUTC,    // created_date
 			timeUTC,    // created_at
 			TimeUTCStr, // time
-			nil)        // tags_id
-		// json)       // additional_tags
+			nil,        // tags_id
+			json)       // additional_tags
 
 		if p.conf.InTableTag {
 			r = append(r, tags[0]) // tags[0] = hostname
@@ -208,7 +198,7 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	if len(newTags) > 0 {
 		// We have new tags to insert
 		p.csi.mutex.Lock()
-		hostnameToTags := insertTags(p.conf, p.conn, len(p.csi.m), newTags, true)
+		hostnameToTags := insertTags(p.conf, p.db, len(p.csi.m), newTags, true)
 		// Insert new tags into map as well
 		for hostName, tagsId := range hostnameToTags {
 			p.csi.m[hostName] = tagsId
@@ -235,55 +225,41 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 	// Inspite of "additional_tags" being added the last one in CREATE TABLE stmt
 	// it goes as a third one here - because we can move columns - they are named
 	// and it is easier to keep variable coumns at the end of the list
-	cols = append(cols, "created_date", "created_at", "time", "tags_id") //, "additional_tags")
+	cols = append(cols, "created_date", "created_at", "time", "tags_id", "additional_tags")
 	if p.conf.InTableTag {
 		cols = append(cols, tableCols["tags"][0]) // hostname
 	}
 	cols = append(cols, tableCols[tableName]...)
 
-	batch, err := p.conn.PrepareBatch(context.Background(), fmt.Sprintf("INSERT INTO %s", tableName))
+	// INSERT statement template
+	sql := fmt.Sprintf(`
+		INSERT INTO %s (
+			%s
+		) VALUES (
+			%s
+		)
+		`,
+		tableName,
+		strings.Join(cols, ","),
+		strings.Repeat(",?", len(cols))[1:]) // We need '?,?,?', but repeat ",?" thus we need to chop off 1-st char
+
+	tx := p.db.MustBegin()
+	stmt, err := tx.Prepare(sql)
 	if err != nil {
 		panic(err)
 	}
-
 	for _, r := range dataRows {
-		// clickhouse-go doesn't auto convert types, so we do it manually via reflection
-		for i, v := range r {
-			t := reflect.TypeOf(v)
-			if t == nil {
-				continue
-			}
-			if v == "" {
-				r[i] = nil
-				continue
-			}
-			switch t.Kind() {
-			case reflect.Float32:
-				r[i] = float32(v.(float64))
-			case reflect.Float64:
-				r[i] = v.(float64)
-			case reflect.Int32:
-				r[i] = int32(v.(int64))
-			case reflect.Int64:
-				r[i] = v.(int64)
-			case reflect.String:
-				r[i] = v.(string)
-			case reflect.Struct:
-				if t.String() == "time.Time" {
-					r[i] = v.(time.Time)
-				}
-			default:
-				panic(fmt.Sprintf("unrecognized type %s with value %v of type %T",
-					t.Kind(), v, v))
-			}
-		}
-
-		if err := batch.Append(r...); err != nil {
+		_, err := stmt.Exec(r...)
+		if err != nil {
 			panic(err)
 		}
 	}
-
-	if err := batch.Send(); err != nil {
+	err = stmt.Close()
+	if err != nil {
+		panic(err)
+	}
+	err = tx.Commit()
+	if err != nil {
 		panic(err)
 	}
 
@@ -291,7 +267,7 @@ func (p *processor) processCSI(tableName string, rows []*insertData) uint64 {
 }
 
 // insertTags fills tags table with values
-func insertTags(_ *ClickhouseConfig, conn driver.Conn, startID int, rows [][]string, returnResults bool) map[string]int64 {
+func insertTags(conf *ClickhouseConfig, db *sqlx.DB, startID int, rows [][]string, returnResults bool) map[string]int64 {
 	// Map hostname to tags_id
 	ret := make(map[string]int64)
 
@@ -313,11 +289,32 @@ func insertTags(_ *ClickhouseConfig, conn driver.Conn, startID int, rows [][]str
 
 	// Columns. Ex.:
 	// hostname,region,datacenter,rack,os,arch,team,service,service_version,service_environment
-	batch, err := conn.PrepareBatch(context.Background(), "INSERT INTO event")
+	cols := tableCols["tags"]
+	// Add id column to prepared statement
+	sql := fmt.Sprintf(`
+		INSERT INTO tags(
+			id,%s
+		) VALUES (
+			?%s
+		)
+		`,
+		strings.Join(cols, ","),
+		strings.Repeat(",?", len(cols)))
+	if conf.Debug > 0 {
+		fmt.Printf(sql)
+	}
 
+	// In a single transaction insert tags row-by-row
+	// ClickHouse driver accumulates all rows inside a transaction into one batch
+	tx, err := db.Begin()
 	if err != nil {
 		panic(err)
 	}
+	stmt, err := tx.Prepare(sql)
+	if err != nil {
+		panic(err)
+	}
+	defer stmt.Close()
 
 	id := startID
 	for _, row := range rows {
@@ -331,30 +328,14 @@ func insertTags(_ *ClickhouseConfig, conn driver.Conn, startID int, rows [][]str
 		var variadicArgs []interface{} = make([]interface{}, len(row)+1) // +1 here for additional 'id' column value
 		// Place id at the beginning
 		variadicArgs[0] = id
-
 		// And all the rest of column values afterwards
-		// fmt.Println("\n\nTag column types:", tagColumnTypes)
-		// [string string string string int64 string string string]
-		// [string string string string int64 string string string]
-
 		for i, value := range row {
 			variadicArgs[i+1] = convertBasedOnType(tagColumnTypes[i], value)
 		}
 
-		// default DB values for created_at and created_date seem
-		// not to be working with batch inserts,
-		// so we add them manually
-		now := time.Now().UTC()
-		variadicArgs = append([]interface{}{now, now}, variadicArgs...)
-
-		// TODO: sometimes, the map is nil and I don't know why
-		// this is a workaround for now
-		if variadicArgs[len(variadicArgs)-2] == nil {
-			variadicArgs[len(variadicArgs)-2] = map[string]string{}
-		}
-
-		// fmt.Println(variadicArgs...)
-		if err := batch.Append(variadicArgs...); err != nil {
+		// And now expand []interface{} with the same data as 'row' contains (plus 'id') in Exec(args ...interface{})
+		_, err := stmt.Exec(variadicArgs...)
+		if err != nil {
 			panic(err)
 		}
 
@@ -365,7 +346,8 @@ func insertTags(_ *ClickhouseConfig, conn driver.Conn, startID int, rows [][]str
 		}
 	}
 
-	if err := batch.Send(); err != nil {
+	err = tx.Commit()
+	if err != nil {
 		panic(err)
 	}
 
@@ -376,34 +358,9 @@ func insertTags(_ *ClickhouseConfig, conn driver.Conn, startID int, rows [][]str
 	return nil
 }
 
-func jsonToMap(jsonStr string) map[string]string {
-	result := make(map[string]string)
-	json.Unmarshal([]byte(jsonStr), &result)
-	return result
-}
-
 func convertBasedOnType(serializedType, value string) interface{} {
 	if value == "" {
 		return nil
-	}
-
-	// starts with 'map{' -> Map
-	if strings.HasPrefix(value, "map{") {
-		// remove the "map" prefix
-		value = value[3:]
-		// replace ";" with ","
-		value = strings.ReplaceAll(value, ";", ",")
-		m := jsonToMap(value)
-		return m
-	}
-
-	// starts with 'json{' -> JSON
-	if strings.HasPrefix(value, "json{") {
-		// remove the "json" prefix
-		value = value[4:]
-		// replace ";" with ","
-		value = strings.ReplaceAll(value, ";", ",")
-		return value
 	}
 
 	switch serializedType {
@@ -434,8 +391,7 @@ func convertBasedOnType(serializedType, value string) interface{} {
 		}
 		return int32(i)
 	default:
-		panic(fmt.Sprintf("unrecognized serializedType %s with value %s of type %T",
-			serializedType, value, value))
+		panic(fmt.Sprintf("unrecognized type %s", serializedType))
 	}
 }
 

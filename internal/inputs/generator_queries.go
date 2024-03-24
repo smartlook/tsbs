@@ -40,6 +40,10 @@ type IoTGeneratorMaker interface {
 	NewIoT(start, end time.Time, scale int) (queryUtils.QueryGenerator, error)
 }
 
+type DEAGeneratorMaker interface {
+	NewDEA(start, end time.Time, scale int) (queryUtils.QueryGenerator, error)
+}
+
 // QueryGenerator is a type of Generator for creating queries to test against a
 // database. The output is specific to the type of database (due to each using
 // different querying techniques, e.g. SQL or REST), but is consumed by TSBS
@@ -196,6 +200,14 @@ func (g *QueryGenerator) getUseCaseGenerator(c *config.QueryGeneratorConfig) (qu
 		}
 
 		return devopsFactory.NewDevops(g.tsStart, g.tsEnd, scale)
+	case common.UseCaseDEA:
+		deaFactory, ok := factory.(DEAGeneratorMaker)
+
+		if !ok {
+			return nil, fmt.Errorf(errUseCaseNotImplementedFmt, c.Use, c.Format)
+		}
+
+		return deaFactory.NewDEA(g.tsStart, g.tsEnd, scale)
 	default:
 		return nil, fmt.Errorf(errUnknownUseCaseFmt, c.Use)
 	}

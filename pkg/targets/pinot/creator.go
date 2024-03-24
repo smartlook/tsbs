@@ -1,13 +1,11 @@
-package clickhouse
+package pinot
 
 import (
-	"context"
 	"fmt"
 	"strings"
-	"time"
 
-	"github.com/ClickHouse/clickhouse-go/v2"
-	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/kshvakov/clickhouse"
 	"github.com/timescale/tsbs/pkg/data/usecases/common"
 	"github.com/timescale/tsbs/pkg/targets"
 )
@@ -27,80 +25,26 @@ func (d *dbCreator) Init() {
 	d.headers = d.ds.Headers()
 }
 
-func connect(
-	c *ClickhouseConfig,
-	db bool,
-) (driver.Conn, error) {
-	d := "default"
-
-	if db {
-		d = c.DbName
-	}
-
-	var (
-		ctx       = context.Background()
-		conn, err = clickhouse.Open(&clickhouse.Options{
-			// TODO: add support for multiple addresses
-			Addr: []string{fmt.Sprintf("%s:9000", c.Host)},
-			Auth: clickhouse.Auth{
-				Database: d,
-				Username: c.User,
-				Password: c.Password,
-			},
-			ClientInfo: clickhouse.ClientInfo{
-				Products: []struct {
-					Name    string
-					Version string
-				}{
-					{Name: "tsbs", Version: "0.1"},
-				},
-			},
-			MaxOpenConns: 999,
-			MaxIdleConns: 999,
-			DialTimeout:  time.Second * 60,
-
-			Debugf: func(format string, v ...interface{}) {
-				fmt.Printf(format, v)
-			},
-			// TLS: &tls.Config{
-			// 	InsecureSkipVerify: true,
-			// },
-		})
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if err := conn.Ping(ctx); err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok {
-			fmt.Printf("Exception [%d] %s \n%s\n", exception.Code, exception.Message, exception.StackTrace)
-		}
-		return nil, err
-	}
-	return conn, nil
-}
-
 // loader.DBCreator interface implementation
 func (d *dbCreator) DBExists(dbName string) bool {
-	conn, err := connect(d.config, false)
+	db := sqlx.MustConnect(dbType, getConnectString(d.config, false))
+	defer db.Close()
+
+	sql := fmt.Sprintf("SELECT name, engine FROM system.databases WHERE name = '%s'", dbName)
+	if d.config.Debug > 0 {
+		fmt.Printf(sql)
+	}
+	var rows []struct {
+		Name   string `db:"name"`
+		Engine string `db:"engine"`
+	}
+
+	err := db.Select(&rows, sql)
 	if err != nil {
 		panic(err)
 	}
-	defer conn.Close()
-
-	rows, err := conn.Query(context.Background(), "SELECT name, engine FROM system.databases WHERE name = ?", dbName)
-	if err != nil {
-		panic(err)
-	}
-
-	for rows.Next() {
-		var name, engine string
-		if err := rows.Scan(&name, &engine); err != nil {
-			panic(err)
-		}
-
-		if name == dbName {
+	for _, row := range rows {
+		if row.Name == dbName {
 			return true
 		}
 	}
@@ -110,15 +54,11 @@ func (d *dbCreator) DBExists(dbName string) bool {
 
 // loader.DBCreator interface implementation
 func (d *dbCreator) RemoveOldDB(dbName string) error {
-	conn, err := connect(d.config, false)
-
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
+	db := sqlx.MustConnect(dbType, getConnectString(d.config, false))
+	defer db.Close()
 
 	sql := fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbName)
-	if err := conn.Exec(context.Background(), sql); err != nil {
+	if _, err := db.Exec(sql); err != nil {
 		panic(err)
 	}
 	return nil
@@ -127,58 +67,50 @@ func (d *dbCreator) RemoveOldDB(dbName string) error {
 // loader.DBCreator interface implementation
 func (d *dbCreator) CreateDB(dbName string) error {
 	// Connect to ClickHouse in general and CREATE DATABASE
-	conn, err := connect(d.config, false)
-	if err != nil {
-		panic(err)
-	}
-
+	db := sqlx.MustConnect(dbType, getConnectString(d.config, false))
 	sql := fmt.Sprintf("CREATE DATABASE %s", dbName)
-	err = conn.Exec(context.Background(), sql)
+	_, err := db.Exec(sql)
 	if err != nil {
 		panic(err)
 	}
-	conn.Close()
+	db.Close()
+	db = nil
 
 	// Connect to specified database within ClickHouse
-	conn, err = connect(d.config, true)
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
+	db = sqlx.MustConnect(dbType, getConnectString(d.config, true))
+	defer db.Close()
 
-	createTagsTable(d.config, conn, d.headers.TagKeys, d.headers.TagTypes)
+	createTagsTable(d.config, db, d.headers.TagKeys, d.headers.TagTypes)
 	if tableCols == nil {
 		tableCols = make(map[string][]string)
 	}
 	tableCols["tags"] = d.headers.TagKeys
 	tagColumnTypes = d.headers.TagTypes
 
-	// fmt.Println("\n\nTag column types:", tagColumnTypes)
-
 	for tableName, fieldColumns := range d.headers.FieldKeys {
 		//tableName: cpu
 		// fieldColumns content:
 		// usage_user,usage_system,usage_idle,usage_nice,usage_iowait,usage_irq,usage_softirq,usage_steal,usage_guest,usage_guest_nice
-		createMetricsTable(d.config, conn, tableName, fieldColumns)
+		createMetricsTable(d.config, db, tableName, fieldColumns)
 	}
 
 	return nil
 }
 
 // createTagsTable builds CREATE TABLE SQL statement and runs it
-func createTagsTable(conf *ClickhouseConfig, conn driver.Conn, tagNames, tagTypes []string) {
+func createTagsTable(conf *ClickhouseConfig, db *sqlx.DB, tagNames, tagTypes []string) {
 	sql := generateTagsTableQuery(tagNames, tagTypes)
 	if conf.Debug > 0 {
 		fmt.Printf(sql)
 	}
-
-	if err := conn.Exec(context.Background(), sql); err != nil {
+	_, err := db.Exec(sql)
+	if err != nil {
 		panic(err)
 	}
 }
 
 // createMetricsTable builds CREATE TABLE SQL statement and runs it
-func createMetricsTable(conf *ClickhouseConfig, conn driver.Conn, tableName string, fieldColumns []string) {
+func createMetricsTable(conf *ClickhouseConfig, db *sqlx.DB, tableName string, fieldColumns []string) {
 	tableCols[tableName] = fieldColumns
 
 	// We'll have some service columns in table to be created and columnNames contains all column names to be created
@@ -209,18 +141,17 @@ func createMetricsTable(conf *ClickhouseConfig, conn driver.Conn, tableName stri
 				created_at      DateTime DEFAULT now(),
 				time            String,
 				tags_id         UInt32,
-				%s
-			) ENGINE = MergeTree() PARTITION BY toYYYYMM(created_date)
-			ORDER BY (tags_id, created_at)
-			SETTINGS index_granularity = 8192;
+				%s,
+				additional_tags String   DEFAULT ''
+			) ENGINE = MergeTree(created_date, (tags_id, created_at), 8192)
 			`,
 		tableName,
 		strings.Join(columnsWithType, ","))
 	if conf.Debug > 0 {
 		fmt.Printf(sql)
 	}
-
-	if err := conn.Exec(context.Background(), sql); err != nil {
+	_, err := db.Exec(sql)
+	if err != nil {
 		panic(err)
 	}
 }
@@ -235,7 +166,7 @@ func generateTagsTableQuery(tagNames, tagTypes []string) string {
 
 	tagColumnDefinitions := make([]string, len(tagNames))
 	for i, tagName := range tagNames {
-		tagType := serializedTypeToClickHouseType(tagName, tagTypes[i])
+		tagType := serializedTypeToClickHouseType(tagTypes[i])
 		tagColumnDefinitions[i] = fmt.Sprintf("%s %s", tagName, tagType)
 	}
 
@@ -244,26 +175,17 @@ func generateTagsTableQuery(tagNames, tagTypes []string) string {
 	index := "id"
 
 	return fmt.Sprintf(
-		"CREATE TABLE event(\n"+
+		"CREATE TABLE tags(\n"+
 			"created_date Date     DEFAULT today(),\n"+
 			"created_at   DateTime DEFAULT now(),\n"+
 			"id           UInt32,\n"+
 			"%s"+
-			") ENGINE = MergeTree() PARTITION BY toYYYYMM(created_date)"+
-			"ORDER BY (%s)"+
-			"SETTINGS index_granularity = 8192;",
+			") ENGINE = MergeTree(created_date, (%s), 8192)",
 		cols,
 		index)
 }
 
-func serializedTypeToClickHouseType(colName, serializedType string) string {
-	if colName == "properties_map" {
-		return "Map(LowCardinality(String), String) CODEC(ZSTD(1))"
-	}
-	if colName == "properties_json" {
-		return "String"
-	}
-
+func serializedTypeToClickHouseType(serializedType string) string {
 	switch serializedType {
 	case "string":
 		return "Nullable(String)"

@@ -4,12 +4,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/timescale/tsbs/pkg/query/config"
 	"os"
 	"time"
 
+	"github.com/timescale/tsbs/pkg/query/config"
+
 	"github.com/blagojts/viper"
 	"github.com/spf13/pflag"
+	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/dea"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/devops"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/uses/iot"
 	"github.com/timescale/tsbs/cmd/tsbs_generate_queries/utils"
@@ -18,6 +20,14 @@ import (
 )
 
 var useCaseMatrix = map[string]map[string]utils.QueryFillerMaker{
+	"dea": {
+		dea.LabelNestedWhere:             dea.NewNestedWhere(),
+		dea.LabelEventHistogram:          dea.NewEventHistogram(),
+		dea.LabelFunnel + "-strict-long": dea.NewFunnel(true, 8, 12),
+		// dea.LabelFunnel + "-any-long":     dea.NewFunnel(false, 8, 12),
+		dea.LabelFunnel + "-strict-short": dea.NewFunnel(true, 2, 4),
+		// dea.LabelFunnel + "-any-short":    dea.NewFunnel(false, 2, 4),
+	},
 	"devops": {
 		devops.LabelSingleGroupby + "-1-1-1":  devops.NewSingleGroupby(1, 1, 1),
 		devops.LabelSingleGroupby + "-1-1-12": devops.NewSingleGroupby(1, 1, 12),
